@@ -87,6 +87,13 @@ const mixed = withSchedule([
 ]);
 assert(computeOverallStats(mixed).percent === 75, 'late/OD count as attended');
 assert(computeSubjectStats(mixed.schedule, subject).total === 4, 'subject total');
+assert(
+  computeSubjectStats(
+    [{ ...entry('late', 'weighted-late') }],
+    { ...subject, lateWeight: 0.5 }
+  ).percent === 50,
+  'late weighting must preserve class-count denominator'
+);
 
 const empty = computeOverallStats(EMPTY_DATA);
 assert(empty.percent === 0 && empty.total === 0, 'empty stats');

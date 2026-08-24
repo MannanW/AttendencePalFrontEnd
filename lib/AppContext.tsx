@@ -11,7 +11,7 @@ import {
 import { AppData, ScheduleEntry, MarkStatus, Subject } from './types';
 import { loadData, saveData, EMPTY_DATA, normalizeData } from './storage';
 import { generateSeedData } from './seed';
-import { buildDerived, DerivedState } from './attendance';
+import { buildDerived, DerivedState, getWeekStart } from './attendance';
 
 interface AppContextValue {
   data: AppData;
@@ -27,6 +27,8 @@ interface AppContextValue {
   importFromJson: (json: string) => Promise<void>;
   exportToJson: () => string;
   undoLastMark: () => void;
+  addExtraClass: (entry: Omit<ScheduleEntry, 'id' | 'isExtra'>) => boolean;
+  updateEntry: (entryId: string, patch: Partial<ScheduleEntry>) => void;
   canUndo: boolean;
 }
 
@@ -114,16 +116,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, [patch]);
 
+  const addExtraClass = useCallback(
+    (entry: Omit<ScheduleEntry, 'id' | 'isExtra'>) => {
+      const conflict = data.schedule.some((candidate) =>
+          candidate.weekStartDate === entry.weekStartDate &&
+          candidate.dayInt === entry.dayInt &&
+          entry.startMin < candidate.endMin &&
+          entry.endMin > candidate.startMin
+      );
+      if (conflict) return false;
+      const next = { ...data, schedule: [...data.schedule, { ...entry, id: uid('e'), isExtra: true }] };
+      setData(next);
+      persist(next);
+      return true;
+    },
+    [data, persist]
+  );
+
+  const updateEntry = useCallback(
+    (entryId: string, changes: Partial<ScheduleEntry>) => {
+      patch((prev) => ({
+        ...prev,
+        schedule: prev.schedule.map((entry) => entry.id === entryId ? { ...entry, ...changes } : entry),
+      }));
+    },
+    [patch]
+  );
+
   const completeManualSetup = useCallback(
     (
       subjects: Omit<Subject, 'id'>[],
       slots: (Omit<ScheduleEntry, 'id' | 'subjectId'> & { subjectIdx: number })[]
     ) => {
       const created = subjects.map((s) => ({ ...s, id: uid('s') }));
+      const termStart = getWeekStart(new Date().toISOString().slice(0, 10));
       commit(
         {
           ...EMPTY_DATA,
           isOnboarded: true,
+          terms: [{
+            id: 'manual',
+            name: 'Current Term',
+            startDate: termStart,
+            endDate: `${termStart.slice(0, 4)}-12-31`,
+            isActive: true,
+          }],
           subjects: created,
           schedule: slots
             .filter((s) => s.subjectIdx >= 0 && s.subjectIdx < created.length)
@@ -163,6 +200,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       importFromJson,
       exportToJson,
       undoLastMark,
+      addExtraClass,
+      updateEntry,
       canUndo: undoCount > 0,
     }),
     [
@@ -176,6 +215,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       importFromJson,
       exportToJson,
       undoLastMark,
+      addExtraClass,
+      updateEntry,
       undoCount,
     ]
   );

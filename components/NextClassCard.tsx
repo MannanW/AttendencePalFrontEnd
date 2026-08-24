@@ -42,6 +42,7 @@ export const NextClassCard = memo(function NextClassCard({
           <Text style={styles.timeRoom}>
             {minToTime(entry.startMin)} — {minToTime(entry.endMin)} · {entry.room}
           </Text>
+          {entry.note ? <Text style={styles.noteText}>{entry.note}</Text> : null}
         </View>
         <View
           style={[
@@ -93,6 +94,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   timeRoom: { fontSize: 11, color: COLORS.textSecondary, fontFamily: 'monospace' },
+  noteText: { fontSize: 11, color: COLORS.amber, marginTop: 5 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   statusText: {
     fontSize: 9,

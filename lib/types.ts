@@ -12,6 +12,7 @@ export interface Subject {
   name: string;
   colorHex: string;
   targetPercent: number;
+  lateWeight?: number;
   aliases: string[];
 }
 
@@ -42,12 +43,36 @@ export interface Holiday {
   label: string;
 }
 
+export interface AdHocEvent {
+  id: string;
+  date: string;
+  title: string;
+  note: string;
+}
+
+export interface WeeklySnapshot {
+  termId: string;
+  subjectId: string | null;
+  weekStartDate: string;
+  percent: number;
+}
+
+export interface Insight {
+  id: string;
+  termId: string;
+  insightText: string;
+  generatedAt: string;
+}
+
 export interface AppData {
   version: number;
   subjects: Subject[];
   terms: Term[];
   schedule: ScheduleEntry[];
   holidays: Holiday[];
+  adHocEvents?: AdHocEvent[];
+  weeklySnapshots?: WeeklySnapshot[];
+  insights?: Insight[];
   lastMarkedAt: string | null;
   isOnboarded: boolean;
 }

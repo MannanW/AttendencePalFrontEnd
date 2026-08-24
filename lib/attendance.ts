@@ -13,14 +13,16 @@ export interface SubjectStats {
   buffer: number;
   mustAttend: number;
   target: number;
+  lateWeight: number;
 }
 
-export type OverallStats = Omit<SubjectStats, 'subjectId' | 'target'>;
+export type OverallStats = Omit<SubjectStats, 'subjectId' | 'target' | 'lateWeight'>;
 
 export interface DaySummary {
   attended: boolean;
   missed: boolean;
   hasUnmarked: boolean;
+  officialLeave: boolean;
 }
 
 export interface DerivedState {
@@ -33,6 +35,11 @@ export interface DerivedState {
   today: string;
   todayEntries: ScheduleEntry[];
   unmarkedToday: number;
+  recoveryEntries: ScheduleEntry[];
+  streakDays: number;
+  termEndProjection: number;
+  searchIndex: { entry: ScheduleEntry; subject: Subject; text: string }[];
+  insights: string[];
 }
 
 type Counts = {
@@ -101,9 +108,9 @@ function bump(c: Counts, status: MarkStatus) {
   else if (status === 'official_leave') c.officialLeave++;
 }
 
-function statsFromCounts(c: Counts, target = DEFAULT_TARGET): OverallStats {
-  const effectiveAttended = c.attended + c.late + c.officialLeave;
-  const total = effectiveAttended + c.missed;
+function statsFromCounts(c: Counts, target = DEFAULT_TARGET, lateWeight = 1): OverallStats {
+  const effectiveAttended = c.attended + c.late * lateWeight + c.officialLeave;
+  const total = c.attended + c.late + c.officialLeave + c.missed;
   const percent = total ? (effectiveAttended / total) * 100 : 0;
   const t = Math.min(99, Math.max(1, target || DEFAULT_TARGET));
   const rest = 100 - t;
@@ -114,11 +121,11 @@ function statsFromCounts(c: Counts, target = DEFAULT_TARGET): OverallStats {
     percent,
     buffer:
       total && percent >= t
-        ? Math.max(0, Math.floor((effectiveAttended * rest) / t - c.missed))
+        ? Math.max(0, Math.floor((effectiveAttended * 100) / t - total))
         : 0,
     mustAttend:
       total && percent < t
-        ? Math.max(0, Math.ceil((t * c.missed - rest * effectiveAttended) / rest))
+        ? Math.max(0, Math.ceil((t * total - 100 * effectiveAttended) / rest))
         : 0,
   };
 }
@@ -134,7 +141,8 @@ export function computeSubjectStats(
   const target = Number.isFinite(subject.targetPercent)
     ? subject.targetPercent
     : DEFAULT_TARGET;
-  return { subjectId: subject.id, target, ...statsFromCounts(c, target) };
+  const lateWeight = Number.isFinite(subject.lateWeight) ? Math.max(0, subject.lateWeight as number) : 1;
+  return { subjectId: subject.id, target, ...statsFromCounts(c, target, lateWeight), lateWeight };
 }
 
 export function computeOverallStats(data: AppData): OverallStats {
@@ -171,12 +179,14 @@ function dayFlags(entries: ScheduleEntry[]): DaySummary {
   let attended = false;
   let missed = false;
   let hasUnmarked = false;
+  let officialLeave = false;
   for (const e of entries) {
     if (e.status === 'unmarked') hasUnmarked = true;
     else if (e.status === 'missed') missed = true;
+    else if (e.status === 'official_leave') officialLeave = true;
     else if (isCounted(e.status)) attended = true;
   }
-  return { attended, missed, hasUnmarked };
+  return { attended, missed, hasUnmarked, officialLeave };
 }
 
 /** Single pass over schedule: stats, date index, calendar dots. Call only when data changes. */
@@ -226,7 +236,14 @@ export function buildDerived(data: AppData, today = todayStr()): DerivedState {
         stats: {
           subjectId: subject.id,
           target,
-          ...statsFromCounts(bySubject.get(subject.id) ?? EMPTY_COUNTS(), target),
+          ...statsFromCounts(
+            bySubject.get(subject.id) ?? EMPTY_COUNTS(),
+            target,
+            Number.isFinite(subject.lateWeight) ? Math.max(0, subject.lateWeight as number) : 1
+          ),
+          lateWeight: Number.isFinite(subject.lateWeight)
+            ? Math.max(0, subject.lateWeight as number)
+            : 1,
         },
       };
     }),
@@ -240,5 +257,43 @@ export function buildDerived(data: AppData, today = todayStr()): DerivedState {
       (n, e) => n + (e.status === 'unmarked' ? 1 : 0),
       0
     ),
+    recoveryEntries: schedule
+      .filter((entry) => entry.status === 'unmarked' && addDays(entry.weekStartDate, entry.dayInt) <= today)
+      .sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate) || a.startMin - b.startMin),
+    streakDays: calculateStreak(schedule, today),
+    termEndProjection: calculateTermEndProjection(data, overallC, today),
+    searchIndex: schedule.flatMap((entry) => {
+      const subject = subjectById[entry.subjectId];
+      if (!subject) return [];
+      return [{ entry, subject, text: `${subject.name} ${subject.aliases.join(' ')} ${entry.note} ${entry.room}`.toLowerCase() }];
+    }),
+    insights: data.insights?.map((insight) => insight.insightText) ?? [],
   };
+}
+
+function calculateStreak(schedule: ScheduleEntry[], today: string): number {
+  const markedDays = new Set(
+    schedule
+      .filter((entry) => entry.status === 'attended')
+      .map((entry) => addDays(entry.weekStartDate, entry.dayInt))
+  );
+  let cursor = todayStr();
+  let streak = 0;
+  while (markedDays.has(cursor)) {
+    streak++;
+    cursor = addDays(cursor, -1);
+  }
+  return streak;
+}
+
+function calculateTermEndProjection(data: AppData, counts: Counts, today: string): number {
+  const term = data.terms?.find((candidate) => candidate.isActive);
+  if (!term) return statsFromCounts(counts).percent;
+  const remaining = (data.schedule ?? []).filter((entry) => {
+    const date = addDays(entry.weekStartDate, entry.dayInt);
+    return date >= today && date <= term.endDate && entry.status === 'unmarked';
+  }).length;
+  const effectiveAttended = counts.attended + counts.late + counts.officialLeave;
+  const total = effectiveAttended + counts.missed + remaining;
+  return total ? ((effectiveAttended + remaining) / total) * 100 : 0;
 }

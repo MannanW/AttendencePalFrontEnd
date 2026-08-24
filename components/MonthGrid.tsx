@@ -55,6 +55,8 @@ export const MonthGrid = memo(function MonthGrid({
           return (
             <Pressable
               key={dateStr}
+              accessibilityLabel={`${dateStr}${holiday ? `, holiday: ${holiday}` : ''}${summary ? ', has attendance records' : ''}`}
+              accessibilityRole="button"
               onPress={() => onDayPress(dateStr)}
               style={({ pressed }) => [
                 styles.cell,
@@ -85,6 +87,7 @@ export const MonthGrid = memo(function MonthGrid({
                       style={[styles.dot, { backgroundColor: COLORS.borderLight }]}
                     />
                   ) : null}
+                  {summary.officialLeave ? <View style={styles.leaveDot} /> : null}
                 </View>
               ) : null}
               {holiday ? <Text style={styles.holidayDot}>●</Text> : null}
@@ -136,6 +139,7 @@ const styles = StyleSheet.create({
   dayNumHoliday: { color: COLORS.amber },
   indicatorRow: { flexDirection: 'row', gap: 2, marginTop: 3 },
   dot: { width: 4, height: 4, borderRadius: 2 },
+  leaveDot: { width: 5, height: 5, borderRadius: 3, borderWidth: 1, borderColor: COLORS.blue },
   holidayDot: {
     position: 'absolute',
     bottom: 2,

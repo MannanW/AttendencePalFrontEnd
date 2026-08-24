@@ -5,6 +5,7 @@ import {
   Text,
   ScrollView,
   Pressable,
+  TextInput,
 } from 'react-native';
 import { COLORS, DAY_LABELS_FULL, MONTH_LABELS } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
@@ -17,9 +18,10 @@ import { MarkStatus } from '@/lib/types';
 
 export default function DashboardScreen() {
   const { derived, markEntry, undoLastMark, canUndo } = useApp();
-  const { overall, subjectStats, todayEntries, unmarkedToday, subjectById } =
+  const { overall, subjectStats, todayEntries, unmarkedToday, subjectById, recoveryEntries, streakDays, termEndProjection, searchIndex, insights } =
     derived;
   const [showUndo, setShowUndo] = useState(false);
+  const [query, setQuery] = useState('');
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const now = new Date();
@@ -59,6 +61,19 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        <View style={styles.intelligenceRow}>
+          <View>
+            <Text style={styles.intelligenceLabel}>TERM-END PROJECTION</Text>
+            <Text style={[styles.intelligenceValue, { color: termEndProjection >= 75 ? COLORS.green : COLORS.red }]}>
+              {termEndProjection.toFixed(1)}%
+            </Text>
+          </View>
+          <View>
+            <Text style={styles.intelligenceLabel}>MARKED STREAK</Text>
+            <Text style={styles.intelligenceValue}>{streakDays} days</Text>
+          </View>
+        </View>
+
         {overall.total > 0 && (
           <View style={styles.bufferWrap}>
             <BufferMeter
@@ -66,6 +81,31 @@ export default function DashboardScreen() {
               mustAttend={overall.mustAttend}
               percent={overall.percent}
             />
+          </View>
+        )}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Search</Text>
+          <TextInput
+            accessibilityLabel="Search subjects, rooms, and notes"
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Subject, room, or note"
+            placeholderTextColor={COLORS.textTertiary}
+          />
+          {query.trim() ? searchIndex.filter((item) => item.text.includes(query.trim().toLowerCase())).slice(0, 5).map(({ entry, subject }) => (
+            <View key={entry.id} style={styles.searchResult}>
+              <Text style={styles.searchSubject}>{subject.name}</Text>
+              <Text style={styles.searchMeta}>{entry.note || entry.room} · {entry.status}</Text>
+            </View>
+          )) : null}
+        </View>
+
+        {recoveryEntries.length > 0 && (
+          <View style={styles.recoveryBox}>
+            <Text style={styles.recoveryTitle}>{recoveryEntries.length} unmarked classes found</Text>
+            <Text style={styles.recoverySub}>Recovery Mode includes every pending class before today.</Text>
           </View>
         )}
 
@@ -99,6 +139,12 @@ export default function DashboardScreen() {
             </View>
           )}
         </View>
+        {insights.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Smart Insights</Text>
+            {insights.slice(0, 3).map((insight) => <Text key={insight} style={styles.insightText}>{insight}</Text>)}
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Subject Breakdown</Text>
@@ -250,6 +296,34 @@ const styles = StyleSheet.create({
   },
   emptySub: { fontSize: 12, color: COLORS.textTertiary },
   classList: { gap: 10 },
+  intelligenceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 14,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  intelligenceLabel: { fontSize: 9, color: COLORS.textSecondary, letterSpacing: 1 },
+  intelligenceValue: { fontSize: 18, color: COLORS.textPrimary, fontWeight: '700', marginTop: 4 },
+  searchInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    color: COLORS.textPrimary,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  searchResult: { borderBottomWidth: 1, borderBottomColor: COLORS.border, paddingVertical: 10 },
+  searchSubject: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600' },
+  searchMeta: { color: COLORS.textSecondary, fontSize: 11, marginTop: 3 },
+  recoveryBox: { marginHorizontal: 20, marginBottom: 24, padding: 14, borderWidth: 1, borderColor: COLORS.amber, backgroundColor: COLORS.surface },
+  recoveryTitle: { color: COLORS.amber, fontSize: 13, fontWeight: '700' },
+  recoverySub: { color: COLORS.textSecondary, fontSize: 11, marginTop: 4 },
+  insightText: { color: COLORS.textSecondary, fontSize: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   undoToast: {
     position: 'absolute',
     bottom: 80,

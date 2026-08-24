@@ -9,6 +9,9 @@ export const EMPTY_DATA: AppData = {
   terms: [],
   schedule: [],
   holidays: [],
+  adHocEvents: [],
+  weeklySnapshots: [],
+  insights: [],
   lastMarkedAt: null,
   isOnboarded: false,
 };
@@ -40,10 +43,21 @@ export function normalizeData(raw: unknown): AppData {
   return {
     ...EMPTY_DATA,
     ...raw,
-    subjects: raw.subjects ?? [],
+    subjects: raw.subjects.map((subject) => ({
+      ...subject,
+      aliases: Array.isArray(subject.aliases) ? subject.aliases : [],
+      targetPercent: Number.isFinite(subject.targetPercent) ? subject.targetPercent : 75,
+    })),
     terms: raw.terms ?? [],
-    schedule: raw.schedule ?? [],
+    schedule: raw.schedule.map((entry) => ({
+      ...entry,
+      note: typeof entry.note === 'string' ? entry.note : '',
+      isExtra: Boolean(entry.isExtra),
+    })),
     holidays: raw.holidays ?? [],
+    adHocEvents: raw.adHocEvents ?? [],
+    weeklySnapshots: raw.weeklySnapshots ?? [],
+    insights: raw.insights ?? [],
     version: typeof raw.version === 'number' ? raw.version : 1,
     lastMarkedAt: raw.lastMarkedAt ?? null,
     isOnboarded: Boolean(raw.isOnboarded),
