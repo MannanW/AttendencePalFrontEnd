@@ -1,4 +1,5 @@
 import { StyleSheet, View, Text, Pressable } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { COLORS } from '@/lib/constants';
 import { MarkStatus } from '@/lib/types';
 
@@ -26,7 +27,10 @@ export function MarkButton({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => {});
+        onPress();
+      }}
       style={({ pressed }) => [
         styles.container,
         isSm && styles.containerSm,

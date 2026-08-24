@@ -1,8 +1,16 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { COLORS } from '@/lib/constants';
 import { LayoutDashboard, CalendarDays, Settings } from 'lucide-react-native';
+import { useApp } from '@/lib/AppContext';
 
 export default function TabLayout() {
+  const { data, loading } = useApp();
+
+  if (loading) return null;
+  if (!data.isOnboarded || data.subjects.length === 0) {
+    return <Redirect href="/onboarding" />;
+  }
+
   return (
     <Tabs
       screenOptions={{
@@ -14,7 +22,7 @@ export default function TabLayout() {
           height: 56,
           paddingBottom: 4,
         },
-        tabBarActiveTintColor: COLORS.greenBright,
+        tabBarActiveTintColor: COLORS.green,
         tabBarInactiveTintColor: COLORS.textTertiary,
         tabBarLabelStyle: {
           fontSize: 10,

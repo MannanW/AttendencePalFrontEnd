@@ -3,10 +3,11 @@ import { StyleSheet, View, Text, Pressable, ScrollView, TextInput, Modal } from 
 import { router } from 'expo-router';
 import { COLORS, SUBJECT_COLORS, DAY_LABELS_FULL } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
+import { getWeekStart, todayStr } from '@/lib/attendance';
 import { Subject } from '@/lib/types';
 
 export default function OnboardingScreen() {
-  const { loadSampleData, importFromJson, addSubject, addScheduleEntries } = useApp();
+  const { loadSampleData, importFromJson, completeManualSetup } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
   const [restoreText, setRestoreText] = useState('');
@@ -67,7 +68,7 @@ export default function OnboardingScreen() {
           onPress={handleLoadSample}
         >
           <View style={[styles.optionIcon, { backgroundColor: COLORS.greenDim }]}>
-            <Text style={[styles.optionIconText, { color: COLORS.greenBright }]}>
+            <Text style={[styles.optionIconText, { color: COLORS.green }]}>
               ★
             </Text>
           </View>
@@ -106,8 +107,7 @@ export default function OnboardingScreen() {
       <AddScheduleModal
         visible={showAddForm}
         onClose={() => setShowAddForm(false)}
-        addSubject={addSubject}
-        addScheduleEntries={addScheduleEntries}
+        completeManualSetup={completeManualSetup}
       />
 
       <Modal visible={showRestore} animationType="fade" transparent>
@@ -160,13 +160,11 @@ export default function OnboardingScreen() {
 function AddScheduleModal({
   visible,
   onClose,
-  addSubject,
-  addScheduleEntries,
+  completeManualSetup,
 }: {
   visible: boolean;
   onClose: () => void;
-  addSubject: (s: Omit<Subject, 'id'>) => void;
-  addScheduleEntries: (entries: any[]) => void;
+  completeManualSetup: ReturnType<typeof useApp>['completeManualSetup'];
 }) {
   const [subjects, setSubjects] = useState<
     { name: string; colorHex: string; targetPercent: number }[]
@@ -197,24 +195,14 @@ function AddScheduleModal({
     const validSubjects = subjects.filter((s) => s.name.trim());
     if (validSubjects.length === 0) return;
 
-    const createdSubjects: Subject[] = [];
-    validSubjects.forEach((s, i) => {
-      const id = `s_${Date.now().toString(36)}_${i}`;
-      createdSubjects.push({
-        id,
-        name: s.name.trim(),
-        colorHex: s.colorHex,
-        targetPercent: s.targetPercent,
-        aliases: [],
-      });
-    });
+    const createdSubjects = validSubjects.map((s) => ({
+      name: s.name.trim(),
+      colorHex: s.colorHex,
+      targetPercent: s.targetPercent,
+      aliases: [] as string[],
+    }));
 
-    const today = new Date().toISOString().slice(0, 10);
-    const weekStart = new Date(today);
-    const day = (weekStart.getDay() + 6) % 7;
-    weekStart.setDate(weekStart.getDate() - day);
-    const weekStartStr = weekStart.toISOString().slice(0, 10);
-
+    const weekStartStr = getWeekStart(todayStr());
     const entries = slots
       .filter((slot) => slot.subjectIdx < createdSubjects.length)
       .map((slot) => ({
@@ -223,15 +211,14 @@ function AddScheduleModal({
         dayInt: slot.dayInt,
         startMin: slot.startMin,
         endMin: slot.endMin,
-        subjectId: createdSubjects[slot.subjectIdx].id,
+        subjectIdx: slot.subjectIdx,
         room: slot.room || 'TBD',
         status: 'unmarked' as const,
         note: '',
         isExtra: false,
       }));
 
-    createdSubjects.forEach((s) => addSubject(s));
-    addScheduleEntries(entries);
+    completeManualSetup(createdSubjects, entries);
     onClose();
     router.replace('/(tabs)/dashboard');
   }
@@ -622,7 +609,7 @@ const styles = StyleSheet.create({
   },
   addBtnText: {
     fontSize: 12,
-    color: COLORS.greenBright,
+    color: COLORS.green,
     fontWeight: '600',
   },
   slotRow: {

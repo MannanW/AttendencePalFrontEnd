@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { COLORS } from '@/lib/constants';
 
@@ -8,7 +9,7 @@ interface Props {
   target?: number;
 }
 
-export function BufferMeter({
+export const BufferMeter = memo(function BufferMeter({
   buffer,
   mustAttend,
   percent,
@@ -46,9 +47,20 @@ export function BufferMeter({
           </Text>
         </View>
       </View>
+      <View style={styles.barTrack}>
+        <View
+          style={[
+            styles.barFill,
+            {
+              width: `${Math.max(0, Math.min(100, percent))}%`,
+              backgroundColor: COLORS.green,
+            },
+          ]}
+        />
+      </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -57,8 +69,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 14,
-  flexDirection: 'row',
-    alignItems: 'center',
   },
   row: {
     flexDirection: 'row',
@@ -76,7 +86,7 @@ const styles = StyleSheet.create({
   },
   iconText: {
     fontSize: 14,
-    color: COLORS.greenBright,
+    color: COLORS.green,
     fontWeight: '700',
   },
   content: {
@@ -91,12 +101,23 @@ const styles = StyleSheet.create({
   number: {
     fontSize: 18,
     fontWeight: '700',
-    color: COLORS.greenBright,
+    color: COLORS.green,
     fontFamily: 'monospace',
   },
   subtext: {
     fontSize: 11,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  barTrack: {
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 2,
   },
 });

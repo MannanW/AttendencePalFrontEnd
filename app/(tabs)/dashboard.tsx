@@ -1,89 +1,46 @@
-import { useState, useMemo, useCallback } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   ScrollView,
   Pressable,
-  RefreshControl,
 } from 'react-native';
 import { COLORS, DAY_LABELS_FULL, MONTH_LABELS } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
-import {
-  computeOverallStats,
-  computeSubjectStats,
-  getEntriesForDate,
-  getUnmarkedCount,
-  minToTime,
-  todayStr,
-} from '@/lib/attendance';
 import { AttendanceRing } from '@/components/AttendanceRing';
 import { BufferMeter } from '@/components/BufferMeter';
 import { SubjectCard } from '@/components/SubjectCard';
 import { NextClassCard } from '@/components/NextClassCard';
-import { Undo2, RotateCcw } from 'lucide-react-native';
+import { Undo2 } from 'lucide-react-native';
+import { MarkStatus } from '@/lib/types';
 
 export default function DashboardScreen() {
-  const { data, markEntry, undoLastMark, canUndo } = useApp();
-  const [refreshing, setRefreshing] = useState(false);
+  const { derived, markEntry, undoLastMark, canUndo } = useApp();
+  const { overall, subjectStats, todayEntries, unmarkedToday, subjectById } =
+    derived;
   const [showUndo, setShowUndo] = useState(false);
-
-  const overall = useMemo(() => computeOverallStats(data), [data]);
-
-  const today = todayStr();
-  const todayEntries = useMemo(
-    () => getEntriesForDate(data, today),
-    [data, today]
-  );
-
-  const subjectStats = useMemo(
-    () =>
-      data.subjects.map((s) => ({
-        subject: s,
-        stats: computeSubjectStats(data.schedule, s),
-      })),
-    [data]
-  );
-
-  const unmarkedCount = getUnmarkedCount(data);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const now = new Date();
-  const dayName = DAY_LABELS_FULL[(now.getDay() + 6) % 7];
-  const monthName = MONTH_LABELS[now.getMonth()];
-  const dateNum = now.getDate();
-
   const handleMark = useCallback(
-    (entryId: string, status: any) => {
+    (entryId: string, status: MarkStatus) => {
       markEntry(entryId, status);
       setShowUndo(true);
-      setTimeout(() => setShowUndo(false), 4000);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      undoTimer.current = setTimeout(() => setShowUndo(false), 4000);
     },
     [markEntry]
   );
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 500);
-  }, []);
-
   return (
     <View style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={COLORS.greenBright}
-            colors={[COLORS.greenBright]}
-          />
-        }
-      >
-        {/* Header */}
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
             <Text style={styles.dateLine}>
-              {dayName}, {monthName} {dateNum}
+              {DAY_LABELS_FULL[(now.getDay() + 6) % 7]}, {MONTH_LABELS[now.getMonth()]}{' '}
+              {now.getDate()}
             </Text>
             <Text style={styles.headerTitle}>Dashboard</Text>
           </View>
@@ -93,34 +50,12 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Overall ring + buffer */}
         <View style={styles.overallSection}>
-          <View style={styles.ringWrap}>
-            <AttendanceRing
-              percent={overall.percent}
-              size={130}
-              label="Overall"
-            />
-          </View>
+          <AttendanceRing percent={overall.percent} size={130} label="Overall" />
           <View style={styles.statsCol}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: COLORS.greenBright }]}>
-                {overall.attended + overall.late + overall.officialLeave}
-              </Text>
-              <Text style={styles.statKey}>Attended</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: COLORS.red }]}>
-                {overall.missed}
-              </Text>
-              <Text style={styles.statKey}>Missed</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {overall.total}
-              </Text>
-              <Text style={styles.statKey}>Total</Text>
-            </View>
+            <Stat n={overall.effectiveAttended} label="Attended" color={COLORS.green} />
+            <Stat n={overall.missed} label="Missed" color={COLORS.red} />
+            <Stat n={overall.total} label="Total" />
           </View>
         </View>
 
@@ -134,15 +69,12 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Today's classes */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Today's Classes</Text>
-            {unmarkedCount > 0 && (
+            {unmarkedToday > 0 && (
               <View style={styles.pendingBadge}>
-                <Text style={styles.pendingText}>
-                  {unmarkedCount} pending
-                </Text>
+                <Text style={styles.pendingText}>{unmarkedToday} pending</Text>
               </View>
             )}
           </View>
@@ -156,43 +88,31 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <View style={styles.classList}>
-              {todayEntries.map((entry) => {
-                const subject = data.subjects.find(
-                  (s) => s.id === entry.subjectId
-                );
-                return (
-                  <NextClassCard
-                    key={entry.id}
-                    entry={entry}
-                    subject={subject}
-                    onMark={(status) => handleMark(entry.id, status)}
-                  />
-                );
-              })}
+              {todayEntries.map((entry) => (
+                <NextClassCard
+                  key={entry.id}
+                  entry={entry}
+                  subject={subjectById[entry.subjectId]}
+                  onMark={(status) => handleMark(entry.id, status)}
+                />
+              ))}
             </View>
           )}
         </View>
 
-        {/* Subject breakdown */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Subject Breakdown</Text>
           {subjectStats.length === 0 ? (
             <Text style={styles.emptySub}>No subjects yet.</Text>
           ) : (
             subjectStats.map(({ subject, stats }) => (
-              <SubjectCard
-                key={subject.id}
-                subject={subject}
-                stats={stats}
-              />
+              <SubjectCard key={subject.id} subject={subject} stats={stats} />
             ))
           )}
         </View>
-
         <View style={{ height: 60 }} />
       </ScrollView>
 
-      {/* Undo toast */}
       {showUndo && canUndo && (
         <View style={styles.undoToast}>
           <Text style={styles.undoText}>Status updated</Text>
@@ -203,7 +123,7 @@ export default function DashboardScreen() {
             }}
             style={styles.undoBtn}
           >
-            <Undo2 size={14} color={COLORS.greenBright} strokeWidth={2.5} />
+            <Undo2 size={14} color={COLORS.green} strokeWidth={2.5} />
             <Text style={styles.undoBtnText}>Undo</Text>
           </Pressable>
         </View>
@@ -212,11 +132,25 @@ export default function DashboardScreen() {
   );
 }
 
+const Stat = memo(function Stat({
+  n,
+  label,
+  color,
+}: {
+  n: number;
+  label: string;
+  color?: string;
+}) {
+  return (
+    <View style={styles.statItem}>
+      <Text style={[styles.statValue, color ? { color } : null]}>{n}</Text>
+      <Text style={styles.statKey}>{label}</Text>
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.black,
-  },
+  container: { flex: 1, backgroundColor: COLORS.black },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -232,11 +166,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
+  headerTitle: { fontSize: 24, fontWeight: '700', color: COLORS.textPrimary },
   streakBadge: {
     alignItems: 'center',
     backgroundColor: COLORS.surface,
@@ -263,19 +193,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     marginBottom: 16,
+    gap: 24,
   },
-  ringWrap: {
-    marginRight: 24,
-  },
-  statsCol: {
-    flex: 1,
-    gap: 12,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
+  statsCol: { flex: 1, gap: 12 },
+  statItem: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   statValue: {
     fontSize: 20,
     fontWeight: '700',
@@ -288,14 +209,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  bufferWrap: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
+  bufferWrap: { paddingHorizontal: 20, marginBottom: 24 },
+  section: { paddingHorizontal: 20, marginBottom: 24 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -311,18 +226,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   pendingBadge: {
-    backgroundColor: COLORS.surfaceAlt,
+    backgroundColor: COLORS.surface,
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
-  borderWidth: 1,
+    borderWidth: 1,
     borderColor: COLORS.amber,
   },
-  pendingText: {
-    fontSize: 10,
-    color: COLORS.amber,
-    fontWeight: '600',
-  },
+  pendingText: { fontSize: 10, color: COLORS.amber, fontWeight: '600' },
   emptyState: {
     backgroundColor: COLORS.surface,
     borderRadius: 10,
@@ -337,13 +248,8 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: 4,
   },
-  emptySub: {
-    fontSize: 12,
-    color: COLORS.textTertiary,
-  },
-  classList: {
-    gap: 10,
-  },
+  emptySub: { fontSize: 12, color: COLORS.textTertiary },
+  classList: { gap: 10 },
   undoToast: {
     position: 'absolute',
     bottom: 80,
@@ -359,21 +265,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  undoText: {
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    fontWeight: '500',
-  },
+  undoText: { fontSize: 13, color: COLORS.textPrimary, fontWeight: '500' },
   undoBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  paddingVertical: 4,
+    paddingVertical: 4,
     paddingHorizontal: 8,
   },
-  undoBtnText: {
-    fontSize: 13,
-    color: COLORS.greenBright,
-    fontWeight: '700',
-  },
+  undoBtnText: { fontSize: 13, color: COLORS.green, fontWeight: '700' },
 });

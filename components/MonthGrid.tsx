@@ -1,61 +1,45 @@
+import { memo, useMemo } from 'react';
 import { StyleSheet, View, Text, Pressable } from 'react-native';
-import { COLORS, MONTH_LABELS, DAY_LABELS } from '@/lib/constants';
-import { AppData } from '@/lib/types';
-import { getEntriesForDate, isCounted } from '@/lib/attendance';
+import { COLORS, DAY_LABELS } from '@/lib/constants';
+import { DaySummary } from '@/lib/attendance';
 
 interface Props {
   year: number;
-  month: number; // 0-indexed
-  data: AppData;
+  month: number;
+  today: string;
+  selectedDate: string;
+  summaries: Record<string, DaySummary>;
+  holidays: Record<string, string>;
   onDayPress: (dateStr: string) => void;
-  selectedDate?: string;
 }
 
-export function MonthGrid({ year, month, data, onDayPress, selectedDate }: Props) {
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const daysInMonth = lastDay.getDate();
+function pad(n: number) {
+  return n.toString().padStart(2, '0');
+}
 
-  // Convert to Monday=0
-  const firstDayInt = (firstDay.getDay() + 6) % 7;
-  const totalCells = Math.ceil((firstDayInt + daysInMonth) / 7) * 7;
-
-  const cells: (string | null)[] = [];
-  for (let i = 0; i < totalCells; i++) {
-    const dayNum = i - firstDayInt + 1;
-    if (dayNum < 1 || dayNum > daysInMonth) {
-      cells.push(null);
-    } else {
-      const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${dayNum
-        .toString()
-        .padStart(2, '0')}`;
-      cells.push(dateStr);
-    }
-  }
-
-  function getDaySummary(dateStr: string) {
-    const entries = getEntriesForDate(data, dateStr);
-    if (entries.length === 0) return null;
-    const counted = entries.filter((e) => isCounted(e.status));
-    if (counted.length === 0) {
-      const hasUnmarked = entries.some((e) => e.status === 'unmarked');
-      return { hasUnmarked, attended: 0, missed: 0, total: 0, percent: 0 };
-    }
-    const attended = counted.filter(
-      (e) => e.status === 'attended' || e.status === 'late' || e.status === 'official_leave'
-    ).length;
-    const missed = counted.filter((e) => e.status === 'missed').length;
-    return {
-      hasUnmarked: entries.some((e) => e.status === 'unmarked'),
-      attended,
-      missed,
-      total: counted.length,
-      percent: (attended / counted.length) * 100,
-    };
-  }
+export const MonthGrid = memo(function MonthGrid({
+  year,
+  month,
+  today,
+  selectedDate,
+  summaries,
+  holidays,
+  onDayPress,
+}: Props) {
+  const cells = useMemo(() => {
+    const first = new Date(year, month, 1);
+    const days = new Date(year, month + 1, 0).getDate();
+    const offset = (first.getDay() + 6) % 7;
+    const total = Math.ceil((offset + days) / 7) * 7;
+    return Array.from({ length: total }, (_, i) => {
+      const day = i - offset + 1;
+      if (day < 1 || day > days) return null;
+      return `${year}-${pad(month + 1)}-${pad(day)}`;
+    });
+  }, [year, month]);
 
   return (
-    <View style={styles.container}>
+    <View>
       <View style={styles.dayHeader}>
         {DAY_LABELS.map((d) => (
           <Text key={d} style={styles.dayLabel}>
@@ -65,21 +49,17 @@ export function MonthGrid({ year, month, data, onDayPress, selectedDate }: Props
       </View>
       <View style={styles.grid}>
         {cells.map((dateStr, i) => {
-          if (!dateStr) {
-            return <View key={i} style={styles.emptyCell} />;
-          }
-          const summary = getDaySummary(dateStr);
-          const dayNum = parseInt(dateStr.slice(8), 10);
-          const isSelected = dateStr === selectedDate;
-          const holiday = data.holidays.find((h) => h.date === dateStr);
-
+          if (!dateStr) return <View key={i} style={styles.emptyCell} />;
+          const summary = summaries[dateStr];
+          const holiday = holidays[dateStr];
           return (
             <Pressable
-              key={i}
+              key={dateStr}
               onPress={() => onDayPress(dateStr)}
               style={({ pressed }) => [
                 styles.cell,
-                isSelected && styles.cellSelected,
+                dateStr === today && styles.cellToday,
+                dateStr === selectedDate && styles.cellSelected,
                 pressed && styles.cellPressed,
               ]}
             >
@@ -90,44 +70,36 @@ export function MonthGrid({ year, month, data, onDayPress, selectedDate }: Props
                   holiday && styles.dayNumHoliday,
                 ]}
               >
-                {dayNum}
+                {dateStr.slice(8)}
               </Text>
-              {summary && (
+              {summary ? (
                 <View style={styles.indicatorRow}>
-                  {summary.attended > 0 && (
+                  {summary.attended ? (
+                    <View style={[styles.dot, { backgroundColor: COLORS.green }]} />
+                  ) : null}
+                  {summary.missed ? (
+                    <View style={[styles.dot, { backgroundColor: COLORS.red }]} />
+                  ) : null}
+                  {summary.hasUnmarked ? (
                     <View
-                      style={[styles.indicator, { backgroundColor: COLORS.green }]}
+                      style={[styles.dot, { backgroundColor: COLORS.borderLight }]}
                     />
-                  )}
-                  {summary.missed > 0 && (
-                    <View
-                      style={[styles.indicator, { backgroundColor: COLORS.red }]}
-                    />
-                  )}
-                  {summary.hasUnmarked && (
-                    <View
-                      style={[styles.indicator, { backgroundColor: COLORS.borderLight }]}
-                    />
-                  )}
+                  ) : null}
                 </View>
-              )}
-              {holiday && <Text style={styles.holidayDot}>●</Text>}
+              ) : null}
+              {holiday ? <Text style={styles.holidayDot}>●</Text> : null}
             </Pressable>
           );
         })}
       </View>
     </View>
   );
-}
+});
+
+const CELL_W = '14.2857%';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
+  dayHeader: { flexDirection: 'row', marginBottom: 8 },
   dayLabel: {
     flex: 1,
     textAlign: 'center',
@@ -137,52 +109,33 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: {
-    width: '14.2857%',
+    width: CELL_W,
     aspectRatio: 1,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 6,
     position: 'relative',
   },
-  emptyCell: {
-    width: '14.2857%',
-    aspectRatio: 1,
-  },
+  emptyCell: { width: CELL_W, aspectRatio: 1 },
+  cellToday: { borderWidth: 1, borderColor: COLORS.green },
   cellSelected: {
     backgroundColor: COLORS.surfaceAlt,
     borderWidth: 1,
     borderColor: COLORS.green,
   },
-  cellPressed: {
-    opacity: 0.6,
-  },
+  cellPressed: { opacity: 0.6 },
   dayNum: {
     fontSize: 12,
     fontWeight: '500',
     color: COLORS.textPrimary,
     fontFamily: 'monospace',
   },
-  dayNumEmpty: {
-    color: COLORS.textTertiary,
-  },
-  dayNumHoliday: {
-    color: COLORS.amber,
-  },
-  indicatorRow: {
-    flexDirection: 'row',
-    gap: 2,
-    marginTop: 3,
-  },
-  indicator: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
+  dayNumEmpty: { color: COLORS.textTertiary },
+  dayNumHoliday: { color: COLORS.amber },
+  indicatorRow: { flexDirection: 'row', gap: 2, marginTop: 3 },
+  dot: { width: 4, height: 4, borderRadius: 2 },
   holidayDot: {
     position: 'absolute',
     bottom: 2,

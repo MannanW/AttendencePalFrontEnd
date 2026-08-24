@@ -10,18 +10,16 @@ import {
 } from 'react-native';
 import { COLORS } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
-import { computeOverallStats } from '@/lib/attendance';
 import { Download, Trash2, AlertTriangle, X } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 export default function SettingsScreen() {
-  const { data, exportToJson, clearAllData } = useApp();
+  const { data, derived, exportToJson, clearAllData } = useApp();
+  const { overall } = derived;
   const [showExport, setShowExport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [exportText, setExportText] = useState('');
   const [copied, setCopied] = useState(false);
-
-  const overall = computeOverallStats(data);
 
   function handleExport() {
     const json = exportToJson();
@@ -35,6 +33,8 @@ export default function SettingsScreen() {
       navigator.clipboard.writeText(exportText).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {
+        // clipboard permission denied
       });
     }
   }
@@ -68,7 +68,7 @@ export default function SettingsScreen() {
             <Text
               style={[
                 styles.statValue,
-                { color: overall.percent >= 75 ? COLORS.greenBright : COLORS.red },
+                { color: overall.percent >= 75 ? COLORS.green : COLORS.red },
               ]}
             >
               {overall.total > 0 ? `${overall.percent.toFixed(1)}%` : '—'}
@@ -87,7 +87,7 @@ export default function SettingsScreen() {
         >
           <View style={styles.actionLeft}>
             <View style={styles.actionIcon}>
-              <Download size={18} color={COLORS.greenBright} strokeWidth={2} />
+              <Download size={18} color={COLORS.green} strokeWidth={2} />
             </View>
             <View>
               <Text style={styles.actionTitle}>Export Backup</Text>

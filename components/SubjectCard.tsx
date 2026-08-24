@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, View, Text, Pressable } from 'react-native';
 import { COLORS } from '@/lib/constants';
 import { Subject } from '@/lib/types';
@@ -9,7 +10,7 @@ interface Props {
   onPress?: () => void;
 }
 
-export function SubjectCard({ subject, stats, onPress }: Props) {
+export const SubjectCard = memo(function SubjectCard({ subject, stats, onPress }: Props) {
   const isAbove = stats.percent >= stats.target;
   const barColor = isAbove ? COLORS.green : COLORS.red;
   const barWidth = Math.max(0, Math.min(100, stats.percent));
@@ -31,7 +32,7 @@ export function SubjectCard({ subject, stats, onPress }: Props) {
         <Text
           style={[
             styles.percent,
-            { color: isAbove ? COLORS.greenBright : COLORS.red },
+            { color: isAbove ? COLORS.green : COLORS.red },
           ]}
         >
           {stats.total > 0 ? `${stats.percent.toFixed(1)}%` : '—'}
@@ -54,14 +55,14 @@ export function SubjectCard({ subject, stats, onPress }: Props) {
 
       <View style={styles.statsRow}>
         <Text style={styles.statLabel}>
-          {stats.attended + stats.late + stats.officialLeave} attended
+          {stats.effectiveAttended} attended
         </Text>
         <Text style={styles.statLabel}>{stats.missed} missed</Text>
         <Text style={styles.statLabel}>{stats.total} total</Text>
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

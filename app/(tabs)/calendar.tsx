@@ -1,166 +1,103 @@
-import { useState, useMemo, useCallback } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-} from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { StyleSheet, View, Text, Pressable, ScrollView } from 'react-native';
 import { COLORS, MONTH_LABELS } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
 import { MonthGrid } from '@/components/MonthGrid';
 import { DayTimeline } from '@/components/DayTimeline';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { todayStr } from '@/lib/attendance';
+import { parseLocalDate } from '@/lib/attendance';
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+const LEGEND = [
+  [COLORS.green, 'Attended'],
+  [COLORS.red, 'Missed'],
+  [COLORS.borderLight, 'Pending'],
+  [COLORS.amber, 'Holiday'],
+] as const;
 
 export default function CalendarScreen() {
-  const { data, markEntry } = useApp();
-  const today = todayStr();
-  const now = new Date();
+  const { derived, markEntry } = useApp();
+  const now = useMemo(() => new Date(), []);
+  const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
+  const [selectedDate, setSelectedDate] = useState(derived.today);
 
-  const [viewDate, setViewDate] = useState({
-    year: now.getFullYear(),
-    month: now.getMonth(),
-  });
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-
-  const monthLabel = `${MONTH_LABELS[viewDate.month]} ${viewDate.year}`;
-
-  const goPrevMonth = useCallback(() => {
-    setViewDate((prev) => {
-      const d = new Date(prev.year, prev.month - 1, 1);
-      return { year: d.getFullYear(), month: d.getMonth() };
-    });
-  }, []);
-
-  const goNextMonth = useCallback(() => {
-    setViewDate((prev) => {
-      const d = new Date(prev.year, prev.month + 1, 1);
-      return { year: d.getFullYear(), month: d.getMonth() };
-    });
-  }, []);
-
-  const handleDayPress = useCallback((dateStr: string) => {
-    setSelectedDate(dateStr);
-  }, []);
-
-  const handleMark = useCallback(
-    (entryId: string, status: any) => {
-      markEntry(entryId, status);
-    },
-    [markEntry]
-  );
-
-  const selectedDateObj = useMemo(() => {
-    if (!selectedDate) return null;
-    const d = new Date(selectedDate + 'T00:00:00');
-    return {
-      dayName: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()],
-      monthName: MONTH_LABELS[d.getMonth()],
-      day: d.getDate(),
-    };
+  const headerSub = useMemo(() => {
+    const d = parseLocalDate(selectedDate);
+    return `${WEEKDAYS[d.getDay()]}, ${MONTH_LABELS[d.getMonth()]} ${d.getDate()}`;
   }, [selectedDate]);
 
+  const shiftMonth = useCallback((delta: number) => {
+    setView((v) => {
+      const d = new Date(v.year, v.month + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() };
+    });
+  }, []);
+
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Calendar</Text>
-          <Text style={styles.headerSub}>
-            {selectedDate && selectedDateObj
-              ? `${selectedDateObj.dayName}, ${selectedDateObj.monthName} ${selectedDateObj.day}`
-              : 'Tap a day to see classes'}
-          </Text>
-        </View>
+        <Text style={styles.headerTitle}>Calendar</Text>
+        <Text style={styles.headerSub}>{headerSub}</Text>
       </View>
 
-      {/* Month navigation */}
       <View style={styles.monthNav}>
-        <Pressable onPress={goPrevMonth} style={styles.navBtn}>
+        <Pressable onPress={() => shiftMonth(-1)} style={styles.navBtn}>
           <ChevronLeft size={20} color={COLORS.textSecondary} strokeWidth={2} />
         </Pressable>
-        <Text style={styles.monthLabel}>{monthLabel}</Text>
-        <Pressable onPress={goNextMonth} style={styles.navBtn}>
+        <Text style={styles.monthLabel}>
+          {MONTH_LABELS[view.month]} {view.year}
+        </Text>
+        <Pressable onPress={() => shiftMonth(1)} style={styles.navBtn}>
           <ChevronRight size={20} color={COLORS.textSecondary} strokeWidth={2} />
         </Pressable>
       </View>
 
-      {/* Legend */}
       <View style={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: COLORS.green }]} />
-          <Text style={styles.legendText}>Attended</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: COLORS.red }]} />
-          <Text style={styles.legendText}>Missed</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View
-            style={[styles.legendDot, { backgroundColor: COLORS.borderLight }]}
-          />
-          <Text style={styles.legendText}>Pending</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: COLORS.amber }]} />
-          <Text style={styles.legendText}>Holiday</Text>
-        </View>
+        {LEGEND.map(([color, label]) => (
+          <View key={label} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: color }]} />
+            <Text style={styles.legendText}>{label}</Text>
+          </View>
+        ))}
       </View>
 
-      {/* Month grid */}
       <View style={styles.gridSection}>
         <MonthGrid
-          year={viewDate.year}
-          month={viewDate.month}
-          data={data}
-          onDayPress={handleDayPress}
-          selectedDate={selectedDate ?? undefined}
+          year={view.year}
+          month={view.month}
+          today={derived.today}
+          selectedDate={selectedDate}
+          summaries={derived.daySummary}
+          holidays={derived.holidays}
+          onDayPress={setSelectedDate}
         />
       </View>
 
-      {/* Day timeline (lazy — only shows when a day is selected) */}
-      {selectedDate && (
-        <View style={styles.timelineSection}>
-          <View style={styles.timelineDivider} />
-          <DayTimeline
-            dateStr={selectedDate}
-            data={data}
-            onMark={handleMark}
-          />
-        </View>
-      )}
-
-      {!selectedDate && (
-        <View style={styles.hintSection}>
-          <Text style={styles.hintText}>
-            Select a date to view and mark classes
-          </Text>
-        </View>
-      )}
-    </View>
+      <View style={styles.timelineSection}>
+        <View style={styles.timelineDivider} />
+        <DayTimeline
+          dateStr={selectedDate}
+          entries={derived.byDate[selectedDate] ?? []}
+          subjectById={derived.subjectById}
+          holiday={derived.holidays[selectedDate]}
+          onMark={markEntry}
+        />
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.black,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  headerSub: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
+  container: { flex: 1, backgroundColor: COLORS.black },
+  content: { paddingBottom: 32 },
+  header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16 },
+  headerTitle: { fontSize: 24, fontWeight: '700', color: COLORS.textPrimary },
+  headerSub: { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -191,42 +128,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 20,
   },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  legendDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  legendText: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-  },
-  gridSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  timelineSection: {
-    flex: 1,
-    paddingHorizontal: 20,
-  paddingTop: 8,
-  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 6, height: 6, borderRadius: 3 },
+  legendText: { fontSize: 10, color: COLORS.textSecondary },
+  gridSection: { paddingHorizontal: 20, paddingVertical: 12 },
+  timelineSection: { paddingHorizontal: 20, paddingTop: 8 },
   timelineDivider: {
     height: 1,
     backgroundColor: COLORS.border,
     marginBottom: 16,
-  },
-  hintSection: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 40,
-  },
-  hintText: {
-    fontSize: 13,
-    color: COLORS.textTertiary,
   },
 });

@@ -1,16 +1,25 @@
 import { AppData, ScheduleEntry, Subject, Term } from './types';
+import { addDays, formatDate, getWeekStart, todayStr } from './attendance';
 
 function uid(prefix: string, i: number): string {
   return `${prefix}_${i.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-// Generate a week's worth of schedule entries for a given Monday date
+type DayConfig = {
+  day: number;
+  slots: { subj: number; start: number; end: number; room: string }[];
+};
+
 function generateWeek(
   weekStart: string,
   subjects: Subject[],
   termId: string,
-  dayConfigs: { day: number; slots: { subj: number; start: number; end: number; room: string }[] }[],
-  statusOverrides: { day: number; slotIdx: number; status: ScheduleEntry['status'] }[] = []
+  dayConfigs: DayConfig[],
+  statusOverrides: {
+    day: number;
+    slotIdx: number;
+    status: ScheduleEntry['status'];
+  }[] = []
 ): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
   let idCounter = 0;
@@ -20,6 +29,8 @@ function generateWeek(
       const override = statusOverrides.find(
         (o) => o.day === config.day && o.slotIdx === slotIdx
       );
+      const subject = subjects[slot.subj];
+      if (!subject) return;
       entries.push({
         id: uid('e', idCounter++),
         termId,
@@ -27,7 +38,7 @@ function generateWeek(
         dayInt: config.day,
         startMin: slot.start,
         endMin: slot.end,
-        subjectId: subjects[slot.subj].id,
+        subjectId: subject.id,
         room: slot.room,
         status: override ? override.status : 'unmarked',
         note: '',
@@ -41,28 +52,31 @@ function generateWeek(
 
 export function generateSeedData(): AppData {
   const termId = uid('t', 0);
-  const termStartDate = '2025-08-04'; // A Monday
-  const termEndDate = '2025-11-28';
+  const today = todayStr();
+  const currentWeekStart = getWeekStart(today);
+  const todayDayInt = (new Date().getDay() + 6) % 7;
+
+  const termStartDate = addDays(currentWeekStart, -7 * 5);
+  const termEndDate = addDays(currentWeekStart, 7 * 10);
 
   const subjects: Subject[] = [
     { id: uid('s', 0), name: 'Data Structures & Algorithms', colorHex: '#0E7C4F', targetPercent: 75, aliases: ['DSA', 'Data Structures'] },
-    { id: uid('s', 1), name: 'Operating Systems', colorHex: '#1565C0', targetPercent: 75, aliases: ['OS', 'Operating Sys'] },
-    { id: uid('s', 2), name: 'Computer Networks', colorHex: '#C62828', targetPercent: 75, aliases: ['CN', 'Networks'] },
-    { id: uid('s', 3), name: 'Database Management Systems', colorHex: '#F9A825', targetPercent: 75, aliases: ['DBMS', 'Database'] },
-    { id: uid('s', 4), name: 'Theory of Computation', colorHex: '#6D4C41', targetPercent: 75, aliases: ['TOC', 'Computation'] },
-    { id: uid('s', 5), name: 'Engineering Economics', colorHex: '#546E7A', targetPercent: 75, aliases: ['Eco', 'Economics'] },
+    { id: uid('s', 1), name: 'Operating Systems', colorHex: '#1565C0', targetPercent: 75, aliases: ['OS'] },
+    { id: uid('s', 2), name: 'Computer Networks', colorHex: '#C62828', targetPercent: 75, aliases: ['CN'] },
+    { id: uid('s', 3), name: 'Database Management Systems', colorHex: '#F9A825', targetPercent: 75, aliases: ['DBMS'] },
+    { id: uid('s', 4), name: 'Theory of Computation', colorHex: '#6D4C41', targetPercent: 75, aliases: ['TOC'] },
+    { id: uid('s', 5), name: 'Engineering Economics', colorHex: '#546E7A', targetPercent: 75, aliases: ['Eco'] },
   ];
 
   const term: Term = {
     id: termId,
-    name: 'Semester 5 — Fall 2025',
+    name: 'Semester 5 — Sample Term',
     startDate: termStartDate,
     endDate: termEndDate,
     isActive: true,
   };
 
-  // Standard weekly schedule (Mon-Sat)
-  const dayConfigs = [
+  const dayConfigs: DayConfig[] = [
     { day: 0, slots: [
       { subj: 0, start: 9 * 60, end: 10 * 60, room: 'CS-101' },
       { subj: 1, start: 10 * 60, end: 11 * 60, room: 'CS-102' },
@@ -98,42 +112,44 @@ export function generateSeedData(): AppData {
     ]},
   ];
 
-  // Generate 6 weeks of past data with realistic attendance near 75%
   const allEntries: ScheduleEntry[] = [];
-  const today = new Date();
-  const todayDay = today.toISOString().slice(0, 10);
-
-  // Past weeks with marked attendance
-  // Week 1 (Aug 4-9): mostly attended, 1 missed
-  // Week 2 (Aug 11-16): attended, 2 missed
-  // Week 3 (Aug 18-23): mostly attended, 1 missed, 1 late
-  // Week 4 (Aug 25-30): attended, 3 missed (dip)
-  // Week 5 (Sep 1-6): recovery, mostly attended
-  // Current week (Sep 8-13): partially marked, some unmarked
 
   const pastWeeks = [
-    { weekStart: '2025-08-04', overrides: [
-      { day: 0, slotIdx: 2, status: 'missed' as const },
-      { day: 2, slotIdx: 0, status: 'missed' as const },
-    ]},
-    { weekStart: '2025-08-11', overrides: [
-      { day: 1, slotIdx: 2, status: 'missed' as const },
-      { day: 3, slotIdx: 3, status: 'missed' as const },
-      { day: 4, slotIdx: 0, status: 'missed' as const },
-    ]},
-    { weekStart: '2025-08-18', overrides: [
-      { day: 0, slotIdx: 1, status: 'late' as const },
-      { day: 2, slotIdx: 3, status: 'missed' as const },
-    ]},
-    { weekStart: '2025-08-25', overrides: [
-      { day: 0, slotIdx: 0, status: 'missed' as const },
-      { day: 1, slotIdx: 0, status: 'missed' as const },
-      { day: 3, slotIdx: 2, status: 'missed' as const },
-      { day: 4, slotIdx: 2, status: 'missed' as const },
-    ]},
-    { weekStart: '2025-09-01', overrides: [
-      { day: 2, slotIdx: 0, status: 'missed' as const },
-    ]},
+    {
+      weekStart: addDays(currentWeekStart, -35),
+      overrides: [
+        { day: 0, slotIdx: 2, status: 'missed' as const },
+        { day: 2, slotIdx: 0, status: 'missed' as const },
+      ],
+    },
+    {
+      weekStart: addDays(currentWeekStart, -28),
+      overrides: [
+        { day: 1, slotIdx: 2, status: 'missed' as const },
+        { day: 3, slotIdx: 3, status: 'missed' as const },
+        { day: 4, slotIdx: 0, status: 'missed' as const },
+      ],
+    },
+    {
+      weekStart: addDays(currentWeekStart, -21),
+      overrides: [
+        { day: 0, slotIdx: 1, status: 'late' as const },
+        { day: 2, slotIdx: 3, status: 'missed' as const },
+      ],
+    },
+    {
+      weekStart: addDays(currentWeekStart, -14),
+      overrides: [
+        { day: 0, slotIdx: 0, status: 'missed' as const },
+        { day: 1, slotIdx: 0, status: 'missed' as const },
+        { day: 3, slotIdx: 2, status: 'missed' as const },
+        { day: 4, slotIdx: 2, status: 'missed' as const },
+      ],
+    },
+    {
+      weekStart: addDays(currentWeekStart, -7),
+      overrides: [{ day: 2, slotIdx: 0, status: 'missed' as const }],
+    },
   ];
 
   for (const week of pastWeeks) {
@@ -144,7 +160,6 @@ export function generateSeedData(): AppData {
       dayConfigs,
       week.overrides
     );
-    // Mark all non-overridden as attended
     for (const entry of weekEntries) {
       if (entry.status === 'unmarked') {
         entry.status = 'attended';
@@ -153,29 +168,36 @@ export function generateSeedData(): AppData {
     allEntries.push(...weekEntries);
   }
 
-  // Current week — partially marked
-  // Today is Aug 24 2026 per env, but our seed term is Fall 2025.
-  // We'll set the "current" week to the last week in our data and leave some unmarked.
-  const currentWeekStart = '2025-09-08';
-  const currentWeekEntries = generateWeek(
-    currentWeekStart,
-    subjects,
-    termId,
-    dayConfigs,
-    [
-      { day: 0, slotIdx: 0, status: 'attended' as const },
-      { day: 0, slotIdx: 1, status: 'attended' as const },
-      { day: 0, slotIdx: 2, status: 'missed' as const },
-      { day: 0, slotIdx: 3, status: 'attended' as const },
-      { day: 1, slotIdx: 0, status: 'attended' as const },
-      { day: 1, slotIdx: 1, status: 'attended' as const },
-      { day: 1, slotIdx: 2, status: 'attended' as const },
-      { day: 1, slotIdx: 3, status: 'missed' as const },
-      { day: 2, slotIdx: 0, status: 'attended' as const },
-      // day 2 slots 1-3, day 3-5 left unmarked
-    ]
+  const currentOverrides: {
+    day: number;
+    slotIdx: number;
+    status: ScheduleEntry['status'];
+  }[] = [];
+
+  for (const config of dayConfigs) {
+    if (config.day < todayDayInt) {
+      config.slots.forEach((_, slotIdx) => {
+        const miss =
+          (config.day === 0 && slotIdx === 2) ||
+          (config.day === 1 && slotIdx === 3);
+        currentOverrides.push({
+          day: config.day,
+          slotIdx,
+          status: miss ? 'missed' : 'attended',
+        });
+      });
+    }
+  }
+
+  allEntries.push(
+    ...generateWeek(
+      currentWeekStart,
+      subjects,
+      termId,
+      dayConfigs,
+      currentOverrides
+    )
   );
-  allEntries.push(...currentWeekEntries);
 
   return {
     version: 1,
@@ -183,10 +205,12 @@ export function generateSeedData(): AppData {
     terms: [term],
     schedule: allEntries,
     holidays: [
-      { date: '2025-08-15', label: 'Independence Day' },
-      { date: '2025-09-05', label: 'Teachers Day' },
+      { date: addDays(currentWeekStart, -17), label: 'Holiday' },
+      { date: addDays(currentWeekStart, 4), label: 'Institute Holiday' },
     ],
-    lastMarkedAt: '2025-09-09T10:30:00',
+    lastMarkedAt: new Date().toISOString(),
     isOnboarded: true,
   };
 }
+
+export { formatDate };

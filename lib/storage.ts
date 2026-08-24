@@ -13,30 +13,70 @@ export const EMPTY_DATA: AppData = {
   isOnboarded: false,
 };
 
+function webStore(): Storage | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isAppData(value: unknown): value is AppData {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    Array.isArray(v.subjects) &&
+    Array.isArray(v.schedule) &&
+    Array.isArray(v.terms) &&
+    Array.isArray(v.holidays)
+  );
+}
+
+export function normalizeData(raw: unknown): AppData {
+  if (!isAppData(raw)) {
+    throw new Error('Invalid attendance backup');
+  }
+  return {
+    ...EMPTY_DATA,
+    ...raw,
+    subjects: raw.subjects ?? [],
+    terms: raw.terms ?? [],
+    schedule: raw.schedule ?? [],
+    holidays: raw.holidays ?? [],
+    version: typeof raw.version === 'number' ? raw.version : 1,
+    lastMarkedAt: raw.lastMarkedAt ?? null,
+    isOnboarded: Boolean(raw.isOnboarded),
+  };
+}
+
 export async function loadData(): Promise<AppData> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const store = webStore();
+    if (!store) return { ...EMPTY_DATA };
+
+    const raw = store.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as AppData;
-      return { ...EMPTY_DATA, ...parsed };
+      return normalizeData(JSON.parse(raw));
     }
-    // Migrate from legacy key
-    const legacy = localStorage.getItem(LEGACY_KEY);
+
+    const legacy = store.getItem(LEGACY_KEY);
     if (legacy) {
-      const parsed = JSON.parse(legacy) as AppData;
+      const parsed = normalizeData(JSON.parse(legacy));
       await saveData(parsed);
-      localStorage.removeItem(LEGACY_KEY);
-      return { ...EMPTY_DATA, ...parsed };
+      store.removeItem(LEGACY_KEY);
+      return parsed;
     }
   } catch {
-    // fall through
+    // corrupt JSON, missing store, or invalid shape
   }
   return { ...EMPTY_DATA };
 }
 
 export async function saveData(data: AppData): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const store = webStore();
+    store?.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // storage full or unavailable
   }
@@ -47,6 +87,5 @@ export async function exportData(data: AppData): Promise<string> {
 }
 
 export async function importData(json: string): Promise<AppData> {
-  const parsed = JSON.parse(json) as AppData;
-  return { ...EMPTY_DATA, ...parsed };
+  return normalizeData(JSON.parse(json));
 }

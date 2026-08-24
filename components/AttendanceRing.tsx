@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import { COLORS } from '@/lib/constants';
 
 interface Props {
@@ -8,7 +10,7 @@ interface Props {
   label?: string;
 }
 
-export function AttendanceRing({
+export const AttendanceRing = memo(function AttendanceRing({
   percent,
   size = 120,
   strokeWidth = 8,
@@ -16,47 +18,49 @@ export function AttendanceRing({
 }: Props) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const clampedPercent = Math.max(0, Math.min(100, percent));
+  const safePercent = Number.isFinite(percent) ? percent : 0;
+  const clampedPercent = Math.max(0, Math.min(100, safePercent));
   const dashOffset = circumference - (clampedPercent / 100) * circumference;
+  const cx = size / 2;
 
-  const isAbove = percent >= 75;
-  const color = isAbove ? COLORS.greenBright : COLORS.red;
-  const strokeColor = percent >= 75 ? COLORS.green : COLORS.redDim;
+  const isAbove = clampedPercent >= 75;
+  const color = isAbove ? COLORS.green : COLORS.red;
+  const strokeColor = isAbove ? COLORS.green : COLORS.redDim;
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      <svg width={size} height={size} style={styles.svg}>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
+      <Svg width={size} height={size} style={styles.svg}>
+        <Circle
+          cx={cx}
+          cy={cx}
           r={radius}
           fill="none"
           stroke={COLORS.border}
           strokeWidth={strokeWidth}
         />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
+        <Circle
+          cx={cx}
+          cy={cx}
           r={radius}
           fill="none"
           stroke={strokeColor}
           strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
+          strokeDasharray={`${circumference} ${circumference}`}
           strokeDashoffset={dashOffset}
           strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+          rotation="-90"
+          origin={`${cx}, ${cx}`}
         />
-      </svg>
+      </Svg>
       <View style={styles.center}>
         <Text style={[styles.percent, { color }]}>
-          {percent.toFixed(1)}%
+          {clampedPercent.toFixed(1)}%
         </Text>
-        {label && <Text style={styles.label}>{label}</Text>}
+        {label ? <Text style={styles.label}>{label}</Text> : null}
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
