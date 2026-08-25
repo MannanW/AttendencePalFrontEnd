@@ -5,17 +5,61 @@ import { COLORS, SUBJECT_COLORS, DAY_LABELS_FULL } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
 import { getWeekStart, todayStr } from '@/lib/attendance';
 import { Subject } from '@/lib/types';
+import * as DocumentPicker from 'expo-document-picker';
+import { parseXlsxBuffer, ParsedTimetable } from '@/lib/xlsxImport';
 
 export default function OnboardingScreen() {
-  const { loadSampleData, importFromJson, completeManualSetup } = useApp();
+  const { importFromJson, completeManualSetup } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [parsedTimetable, setParsedTimetable] = useState<ParsedTimetable | null>(null);
+  const [workbookBuffer, setWorkbookBuffer] = useState<ArrayBuffer | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState('');
   const [showRestore, setShowRestore] = useState(false);
   const [restoreText, setRestoreText] = useState('');
   const [restoreError, setRestoreError] = useState('');
+  const [importError, setImportError] = useState('');
 
-  function handleLoadSample() {
-    loadSampleData();
-    router.replace('/(tabs)/dashboard');
+  async function handleImport() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'text/csv',
+          'application/pdf',
+          'image/*',
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset.name.toLowerCase().endsWith('.xlsx')) {
+        setImportError('This build currently accepts .xlsx timetables.');
+        return;
+      }
+      const response = await fetch(asset.uri);
+      const buffer = await response.arrayBuffer();
+      const parsed = await parseXlsxBuffer(buffer);
+      setWorkbookBuffer(buffer);
+      setParsedTimetable(parsed);
+      setSelectedSheet(parsed.sheetNames[0] ?? '');
+      setShowImport(true);
+    } catch {
+      setImportError('Could not read that timetable file. Try another .xlsx file.');
+    }
+  }
+
+  async function confirmImport() {
+    if (!parsedTimetable || !selectedSheet) return;
+    try {
+      if (!workbookBuffer) return;
+      const parsed = await parseXlsxBuffer(workbookBuffer, selectedSheet);
+      completeManualSetup(parsed.subjects, parsed.slots.map((slot) => ({ ...slot, weekStartDate: getWeekStart(todayStr()), termId: 'manual' })));
+      setShowImport(false);
+      router.replace('/(tabs)/dashboard');
+    } catch {
+      setRestoreError('Could not import the selected sheet.');
+    }
   }
 
   function handleRestore() {
@@ -46,36 +90,19 @@ export default function OnboardingScreen() {
         <Text style={styles.cardSub}>
           Set up your timetable to start tracking attendance.
         </Text>
+        {importError ? <Text style={styles.errorText}>{importError}</Text> : null}
 
         <Pressable
           style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
-          onPress={() => setShowAddForm(true)}
+          onPress={handleImport}
         >
           <View style={styles.optionIcon}>
             <Text style={styles.optionIconText}>+</Text>
           </View>
           <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Add Subjects & Schedule</Text>
+            <Text style={styles.optionTitle}>Import Timetable</Text>
             <Text style={styles.optionSub}>
-              Manually enter your subjects and weekly class times
-            </Text>
-          </View>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
-          onPress={handleLoadSample}
-        >
-          <View style={[styles.optionIcon, { backgroundColor: COLORS.greenDim }]}>
-            <Text style={[styles.optionIconText, { color: COLORS.green }]}>
-              ★
-            </Text>
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>Load Sample Timetable</Text>
-            <Text style={styles.optionSub}>
-              B.Tech CSE sample with realistic attendance near 75%
+              Upload an Excel .xlsx timetable
             </Text>
           </View>
           <Text style={styles.chevron}>›</Text>
@@ -91,7 +118,7 @@ export default function OnboardingScreen() {
           <View style={styles.optionContent}>
             <Text style={styles.optionTitle}>Restore from Backup</Text>
             <Text style={styles.optionSub}>
-              Import a previously exported JSON backup file
+              Import a previously exported JSON or CSV backup file
             </Text>
           </View>
           <Text style={styles.chevron}>›</Text>
@@ -109,6 +136,27 @@ export default function OnboardingScreen() {
         onClose={() => setShowAddForm(false)}
         completeManualSetup={completeManualSetup}
       />
+
+      <Modal visible={showImport} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Choose Section</Text>
+            <Text style={styles.modalSub}>Select the timetable sheet to import.</Text>
+            <View style={styles.sheetList}>
+              {parsedTimetable?.sheetNames.map((sheet) => (
+                <Pressable key={sheet} onPress={() => setSelectedSheet(sheet)} style={[styles.sheetButton, selectedSheet === sheet && styles.sheetButtonActive]}>
+                  <Text style={[styles.sheetText, selectedSheet === sheet && styles.sheetTextActive]}>{sheet}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.modalSub}>{parsedTimetable?.subjects.length ?? 0} subjects · {parsedTimetable?.slots.length ?? 0} classes found</Text>
+            <View style={styles.modalButtons}>
+              <Pressable style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={() => setShowImport(false)}><Text style={styles.modalBtnText}>Cancel</Text></Pressable>
+              <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={confirmImport}><Text style={[styles.modalBtnText, { color: '#FFFFFF' }]}>Import</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={showRestore} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
@@ -568,6 +616,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textPrimary,
   },
+  sheetList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  sheetButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: COLORS.surfaceAlt,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  sheetButtonActive: { backgroundColor: COLORS.green, borderColor: COLORS.green },
+  sheetText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  sheetTextActive: { color: COLORS.textPrimary },
   sectionLabel: {
     fontSize: 10,
     fontWeight: '700',

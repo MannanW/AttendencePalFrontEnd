@@ -49,7 +49,8 @@ export const AttendanceRing = memo(function AttendanceRing({
           strokeDashoffset={dashOffset}
           strokeLinecap="round"
           rotation="-90"
-          origin={`${cx}, ${cx}`}
+          originX={cx}
+          originY={cx}
         />
       </Svg>
       <View style={styles.center}>

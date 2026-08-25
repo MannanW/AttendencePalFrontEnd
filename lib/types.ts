@@ -14,6 +14,10 @@ export interface Subject {
   targetPercent: number;
   lateWeight?: number;
   aliases: string[];
+  courseCode?: string;
+  facultyName?: string;
+  facultyContact?: string;
+  facultyEmail?: string;
 }
 
 export interface Term {
@@ -84,6 +88,8 @@ export interface AppData {
   insights?: Insight[];
   phase3Cache?: Phase3Cache;
   metricMode?: 'count' | 'hours';
+  notificationsEnabled?: boolean;
+  notificationMinutesBefore?: number;
   lastMarkedAt: string | null;
   isOnboarded: boolean;
 }

@@ -14,7 +14,7 @@ import { Download, FileSpreadsheet, Trash2, AlertTriangle, X } from 'lucide-reac
 import { router } from 'expo-router';
 
 export default function SettingsScreen() {
-  const { data, derived, exportToJson, exportCsv, clearAllData, metricMode, setMetricMode, closeTerm, reopenTerm, bulkPause, copyDaySchedule } = useApp();
+  const { data, derived, exportToJson, exportCsv, clearAllData, metricMode, setMetricMode, closeTerm, reopenTerm, bulkPause, copyDaySchedule, notificationsEnabled, setNotificationsEnabled } = useApp();
   const { overall } = derived;
   const [showExport, setShowExport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -157,6 +157,22 @@ export default function SettingsScreen() {
         <TextInput style={styles.toolInput} value={pauseFrom} onChangeText={setPauseFrom} placeholder="Pause from: YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} />
         <TextInput style={styles.toolInput} value={pauseTo} onChangeText={setPauseTo} placeholder="Pause to: YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} />
         <Pressable style={styles.toolButton} disabled={!pauseFrom || !pauseTo} onPress={() => bulkPause(pauseFrom, pauseTo)}><Text style={styles.toolButtonText}>Bulk pause schedule</Text></Pressable>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Reminders</Text>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: notificationsEnabled }}
+          style={styles.toolRow}
+          onPress={() => void setNotificationsEnabled(!notificationsEnabled)}
+        >
+          <View>
+            <Text style={styles.statLabel}>Class reminders</Text>
+            <Text style={styles.actionSub}>Local alerts for upcoming unmarked classes</Text>
+          </View>
+          <Text style={[styles.toolAction, !notificationsEnabled && { color: COLORS.textTertiary }]}>{notificationsEnabled ? 'ON' : 'OFF'}</Text>
+        </Pressable>
       </View>
 
       {/* About */}

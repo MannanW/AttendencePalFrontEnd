@@ -14,6 +14,7 @@ import { generateSeedData } from './seed';
 import { addDays, buildDerived, DerivedState, getWeekStart, todayStr } from './attendance';
 import { buildInsights, buildPhase3Cache, buildWeeklySnapshots, toCsv } from './phase3';
 import { uid } from './ids';
+import { cancelClassReminders, requestNotificationPermission, rescheduleClassReminders } from './notifications';
 
 interface AppContextValue {
   data: AppData;
@@ -38,6 +39,8 @@ interface AppContextValue {
   reopenTerm: (termId: string) => void;
   bulkPause: (fromDate: string, toDate: string) => void;
   copyDaySchedule: (fromDay: number, toDay: number, weekStartDate: string) => void;
+  notificationsEnabled: boolean;
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   canUndo: boolean;
 }
 
@@ -55,7 +58,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let live = true;
     loadData()
-      .then((d) => live && setData(d))
+      .then((d) => {
+        if (!live) return;
+        setData(d);
+      })
       .catch(() => live && setData({ ...EMPTY_DATA }))
       .finally(() => live && setLoading(false));
     return () => {
@@ -70,7 +76,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const persist = useCallback((next: AppData) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void saveData(next), 400);
+    saveTimer.current = setTimeout(() => {
+      void saveData(next);
+      if (next.notificationsEnabled) {
+        void rescheduleClassReminders(next, next.notificationMinutesBefore ?? 10).catch(() => undefined);
+      }
+    }, 400);
   }, []);
 
   const commit = useCallback(
@@ -82,6 +93,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const enriched = refreshPhase3(next);
       setData(enriched);
       void saveData(enriched);
+      if (enriched.notificationsEnabled) {
+        void rescheduleClassReminders(enriched, enriched.notificationMinutesBefore ?? 10).catch(() => undefined);
+      }
     },
     []
   );
@@ -120,6 +134,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [patch]
   );
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') return;
+    let subscription: { remove: () => void } | undefined;
+    void import('expo-notifications').then((Notifications) => {
+      subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        const entryId = response.notification.request.content.data?.entryId;
+        const action = response.actionIdentifier;
+        if (typeof entryId !== 'string') return;
+        if (action === 'attended' || action === 'late' || action === 'missed') {
+          markEntry(entryId, action);
+        }
+      });
+    }).catch(() => undefined);
+    return () => subscription?.remove();
+  }, [markEntry]);
 
   const undoLastMark = useCallback(() => {
     const last = undoStack.current.pop();
@@ -175,7 +205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entry.endMin > candidate.startMin
       );
       if (conflict) return false;
-      const next = { ...data, schedule: [...data.schedule, { ...entry, id: uid('e'), isExtra: true }] };
+      const next = refreshPhase3({ ...data, schedule: [...data.schedule, { ...entry, id: uid('e'), isExtra: true }] });
       setData(next);
       persist(next);
       return true;
@@ -236,6 +266,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const exportToJson = useCallback(() => JSON.stringify(data, null, 2), [data]);
 
+  const setNotificationsEnabled = useCallback(async (enabled: boolean) => {
+    if (enabled && !(await requestNotificationPermission())) return;
+    patch((prev) => ({ ...prev, notificationsEnabled: enabled }));
+    if (enabled) {
+      await rescheduleClassReminders(data, data.notificationMinutesBefore ?? 10).catch(() => undefined);
+    } else {
+      await cancelClassReminders().catch(() => undefined);
+    }
+  }, [data, patch]);
+
   const derived = useMemo(() => buildDerived(data), [data]);
 
   const value = useMemo<AppContextValue>(
@@ -260,6 +300,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reopenTerm,
       bulkPause,
       copyDaySchedule,
+      notificationsEnabled: data.notificationsEnabled ?? false,
+      setNotificationsEnabled,
     }),
     [
       data,
@@ -281,6 +323,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reopenTerm,
       bulkPause,
       copyDaySchedule,
+      setNotificationsEnabled,
     ]
   );
 
