@@ -10,6 +10,7 @@ import {
 import { generateSeedData } from '../lib/seed';
 import { EMPTY_DATA } from '../lib/storage';
 import { AppData, ScheduleEntry, Subject } from '../lib/types';
+import { buildPhase3Cache, buildWeeklySnapshots, toCsv } from '../lib/phase3';
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -94,6 +95,11 @@ assert(
   ).percent === 50,
   'late weighting must preserve class-count denominator'
 );
+const phase3 = buildPhase3Cache(four, '2026-08-24');
+assert(phase3.counted.total === 4, 'phase 3 cache count');
+assert(phase3.termEndProjection === 75, 'term projection preserves current rate');
+assert(buildWeeklySnapshots(four).some((snapshot) => snapshot.subjectId === null), 'overall weekly snapshot');
+assert(toCsv(four).split('\n').length === 5, 'CSV export includes header and rows');
 
 const empty = computeOverallStats(EMPTY_DATA);
 assert(empty.percent === 0 && empty.total === 0, 'empty stats');

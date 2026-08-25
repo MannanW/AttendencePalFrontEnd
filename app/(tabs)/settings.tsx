@@ -10,16 +10,19 @@ import {
 } from 'react-native';
 import { COLORS } from '@/lib/constants';
 import { useApp } from '@/lib/AppContext';
-import { Download, Trash2, AlertTriangle, X } from 'lucide-react-native';
+import { Download, FileSpreadsheet, Trash2, AlertTriangle, X } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 export default function SettingsScreen() {
-  const { data, derived, exportToJson, clearAllData } = useApp();
+  const { data, derived, exportToJson, exportCsv, clearAllData, metricMode, setMetricMode, closeTerm, reopenTerm, bulkPause, copyDaySchedule } = useApp();
   const { overall } = derived;
   const [showExport, setShowExport] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [exportText, setExportText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [pauseFrom, setPauseFrom] = useState('');
+  const [pauseTo, setPauseTo] = useState('');
+  const [copyWeek, setCopyWeek] = useState(derived.today);
 
   function handleExport() {
     const json = exportToJson();
@@ -77,6 +80,27 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Analytics</Text>
+        <View style={styles.toggleRow}>
+          {(['count', 'hours'] as const).map((mode) => (
+            <Pressable key={mode} accessibilityRole="button" onPress={() => setMetricMode(mode)} style={[styles.toggle, metricMode === mode && styles.toggleActive]}>
+              <Text style={[styles.toggleText, metricMode === mode && styles.toggleTextActive]}>{mode === 'count' ? 'Class Count' : 'Hours'}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.statsCard}>
+          <Text style={styles.statLabel}>Cached attendance time</Text>
+          <Text style={styles.statValue}>{metricMode === 'hours' ? `${((data.phase3Cache?.overallMinutes.attended ?? 0) / 60).toFixed(1)} h attended` : `${overall.total} classes counted`}</Text>
+        </View>
+        <Text style={styles.sectionTitle}>Weekly Trend</Text>
+        {(data.weeklySnapshots ?? []).slice(-6).map((snapshot) => (
+          <View key={`${snapshot.subjectId}-${snapshot.weekStartDate}`} style={styles.trendRow}>
+            <Text style={styles.statLabel}>{snapshot.weekStartDate}</Text><Text style={styles.statValue}>{snapshot.percent.toFixed(1)}%</Text>
+          </View>
+        ))}
+      </View>
+
       {/* Data management */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Data Management</Text>
@@ -98,6 +122,9 @@ export default function SettingsScreen() {
           </View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
+        <Pressable style={({ pressed }) => [styles.actionRow, pressed && styles.actionPressed]} onPress={() => { if (typeof navigator !== 'undefined' && navigator.clipboard) void navigator.clipboard.writeText(exportCsv()).catch(() => undefined); }}>
+          <View style={styles.actionLeft}><View style={styles.actionIcon}><FileSpreadsheet size={18} color={COLORS.green} /></View><View><Text style={styles.actionTitle}>Export CSV</Text><Text style={styles.actionSub}>Copy a spreadsheet-ready attendance report</Text></View></View><Text style={styles.chevron}>›</Text>
+        </Pressable>
 
         <Pressable
           style={({ pressed }) => [styles.actionRow, pressed && styles.actionPressed]}
@@ -116,6 +143,20 @@ export default function SettingsScreen() {
           </View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Schedule Tools</Text>
+        {(data.terms ?? []).map((term) => (
+          <Pressable key={term.id} style={styles.toolRow} onPress={() => term.isActive ? closeTerm(term.id) : reopenTerm(term.id)}>
+            <Text style={styles.statLabel}>{term.name}</Text><Text style={styles.toolAction}>{term.isActive ? 'Close term' : 'Reopen term'}</Text>
+          </Pressable>
+        ))}
+        <TextInput style={styles.toolInput} value={copyWeek} onChangeText={setCopyWeek} placeholder="Week start: YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} />
+        <Pressable style={styles.toolButton} onPress={() => copyDaySchedule(0, 5, copyWeek)}><Text style={styles.toolButtonText}>Copy Monday to Saturday</Text></Pressable>
+        <TextInput style={styles.toolInput} value={pauseFrom} onChangeText={setPauseFrom} placeholder="Pause from: YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} />
+        <TextInput style={styles.toolInput} value={pauseTo} onChangeText={setPauseTo} placeholder="Pause to: YYYY-MM-DD" placeholderTextColor={COLORS.textTertiary} />
+        <Pressable style={styles.toolButton} disabled={!pauseFrom || !pauseTo} onPress={() => bulkPause(pauseFrom, pauseTo)}><Text style={styles.toolButtonText}>Bulk pause schedule</Text></Pressable>
       </View>
 
       {/* About */}
@@ -247,6 +288,17 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontFamily: 'monospace',
   },
+  toggleRow: { flexDirection: 'row', borderWidth: 1, borderColor: COLORS.border, marginBottom: 10 },
+  toggle: { flex: 1, alignItems: 'center', paddingVertical: 10, backgroundColor: COLORS.surface },
+  toggleActive: { backgroundColor: COLORS.green },
+  toggleText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  toggleTextActive: { color: COLORS.textPrimary },
+  trendRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  toolRow: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, marginBottom: 8 },
+  toolAction: { color: COLORS.green, fontSize: 11, fontWeight: '700' },
+  toolInput: { backgroundColor: COLORS.surfaceAlt, borderWidth: 1, borderColor: COLORS.border, color: COLORS.textPrimary, padding: 11, marginBottom: 8, fontSize: 12 },
+  toolButton: { alignItems: 'center', backgroundColor: COLORS.green, padding: 12, marginBottom: 10 },
+  toolButtonText: { color: COLORS.textPrimary, fontSize: 12, fontWeight: '700' },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',

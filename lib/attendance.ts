@@ -1,4 +1,4 @@
-import { AppData, MarkStatus, ScheduleEntry, Subject } from './types';
+import { AppData, MarkStatus, Phase3Cache, ScheduleEntry, Subject } from './types';
 import { DEFAULT_TARGET } from './constants';
 
 export interface SubjectStats {
@@ -40,6 +40,7 @@ export interface DerivedState {
   termEndProjection: number;
   searchIndex: { entry: ScheduleEntry; subject: Subject; text: string }[];
   insights: string[];
+  phase3Cache?: Phase3Cache;
 }
 
 type Counts = {
@@ -224,6 +225,7 @@ export function buildDerived(data: AppData, today = todayStr()): DerivedState {
   for (const h of data?.holidays ?? []) holidays[h.date] = h.label;
 
   const todayEntries = byDate[today] ?? [];
+  const recoveryStart = data.lastMarkedAt?.slice(0, 10);
 
   return {
     overall: statsFromCounts(overallC),
@@ -258,16 +260,20 @@ export function buildDerived(data: AppData, today = todayStr()): DerivedState {
       0
     ),
     recoveryEntries: schedule
-      .filter((entry) => entry.status === 'unmarked' && addDays(entry.weekStartDate, entry.dayInt) <= today)
+      .filter((entry) => {
+        const date = addDays(entry.weekStartDate, entry.dayInt);
+        return entry.status === 'unmarked' && date <= today && (!recoveryStart || date >= recoveryStart);
+      })
       .sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate) || a.startMin - b.startMin),
-    streakDays: calculateStreak(schedule, today),
-    termEndProjection: calculateTermEndProjection(data, overallC, today),
+    streakDays: data.phase3Cache?.streakDays ?? 0,
+    termEndProjection: data.phase3Cache?.termEndProjection ?? 0,
     searchIndex: schedule.flatMap((entry) => {
       const subject = subjectById[entry.subjectId];
       if (!subject) return [];
       return [{ entry, subject, text: `${subject.name} ${subject.aliases.join(' ')} ${entry.note} ${entry.room}`.toLowerCase() }];
     }),
     insights: data.insights?.map((insight) => insight.insightText) ?? [],
+    phase3Cache: data.phase3Cache,
   };
 }
 

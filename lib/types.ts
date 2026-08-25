@@ -64,6 +64,15 @@ export interface Insight {
   generatedAt: string;
 }
 
+export interface Phase3Cache {
+  generatedAt: string | null;
+  streakDays: number;
+  termEndProjection: number;
+  overallMinutes: { attended: number; missed: number; late: number };
+  counted: { attended: number; missed: number; total: number };
+  whatIf: { attendNext: number; missNext: number };
+}
+
 export interface AppData {
   version: number;
   subjects: Subject[];
@@ -73,6 +82,8 @@ export interface AppData {
   adHocEvents?: AdHocEvent[];
   weeklySnapshots?: WeeklySnapshot[];
   insights?: Insight[];
+  phase3Cache?: Phase3Cache;
+  metricMode?: 'count' | 'hours';
   lastMarkedAt: string | null;
   isOnboarded: boolean;
 }

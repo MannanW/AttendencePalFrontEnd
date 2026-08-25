@@ -1,8 +1,9 @@
 import { AppData, ScheduleEntry, Subject, Term } from './types';
 import { addDays, formatDate, getWeekStart, todayStr } from './attendance';
+import { uid as secureUid } from './ids';
 
 function uid(prefix: string, i: number): string {
-  return `${prefix}_${i.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  return `${secureUid(prefix)}_${i.toString(36)}`;
 }
 
 type DayConfig = {

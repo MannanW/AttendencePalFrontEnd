@@ -9,9 +9,11 @@ import {
   ReactNode,
 } from 'react';
 import { AppData, ScheduleEntry, MarkStatus, Subject } from './types';
-import { loadData, saveData, EMPTY_DATA, normalizeData } from './storage';
+import { loadData, saveData, EMPTY_DATA, importData } from './storage';
 import { generateSeedData } from './seed';
-import { buildDerived, DerivedState, getWeekStart } from './attendance';
+import { addDays, buildDerived, DerivedState, getWeekStart, todayStr } from './attendance';
+import { buildInsights, buildPhase3Cache, buildWeeklySnapshots, toCsv } from './phase3';
+import { uid } from './ids';
 
 interface AppContextValue {
   data: AppData;
@@ -29,20 +31,26 @@ interface AppContextValue {
   undoLastMark: () => void;
   addExtraClass: (entry: Omit<ScheduleEntry, 'id' | 'isExtra'>) => boolean;
   updateEntry: (entryId: string, patch: Partial<ScheduleEntry>) => void;
+  metricMode: 'count' | 'hours';
+  setMetricMode: (mode: 'count' | 'hours') => void;
+  exportCsv: () => string;
+  closeTerm: (termId: string) => void;
+  reopenTerm: (termId: string) => void;
+  bulkPause: (fromDate: string, toDate: string) => void;
+  copyDaySchedule: (fromDay: number, toDay: number, weekStartDate: string) => void;
   canUndo: boolean;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
-
-const uid = (p: string) =>
-  `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [undoCount, setUndoCount] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestData = useRef(data);
   const undoStack = useRef<{ entryId: string; prevStatus: MarkStatus }[]>([]);
+  latestData.current = data;
 
   useEffect(() => {
     let live = true;
@@ -53,6 +61,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        void saveData(latestData.current);
+      }
     };
   }, []);
 
@@ -67,8 +79,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         undoStack.current = [];
         setUndoCount(0);
       }
-      setData(next);
-      void saveData(next);
+      const enriched = refreshPhase3(next);
+      setData(enriched);
+      void saveData(enriched);
     },
     []
   );
@@ -77,8 +90,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (fn: (prev: AppData) => AppData) => {
       setData((prev) => {
         const next = fn(prev);
-        if (next !== prev) persist(next);
-        return next;
+        if (next !== prev) {
+          const enriched = refreshPhase3(next);
+          persist(enriched);
+          return enriched;
+        }
+        return prev;
       });
     },
     [persist]
@@ -115,6 +132,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ),
     }));
   }, [patch]);
+
+  const setMetricMode = useCallback((metricMode: 'count' | 'hours') => {
+    patch((prev) => ({ ...prev, metricMode }));
+  }, [patch]);
+
+  const exportCsv = useCallback(() => toCsv(data), [data]);
+
+  const closeTerm = useCallback((termId: string) => patch((prev) => ({
+    ...prev,
+    terms: prev.terms.map((term) => term.id === termId ? { ...term, isActive: false } : term),
+  })), [patch]);
+
+  const reopenTerm = useCallback((termId: string) => patch((prev) => ({
+    ...prev,
+    terms: prev.terms.map((term) => ({ ...term, isActive: term.id === termId })),
+  })), [patch]);
+
+  const bulkPause = useCallback((fromDate: string, toDate: string) => patch((prev) => ({
+    ...prev,
+    schedule: prev.schedule.map((entry) => {
+      const actual = new Date(addDays(entry.weekStartDate, entry.dayInt));
+      const start = new Date(fromDate);
+      const end = new Date(toDate);
+      return actual >= start && actual <= end ? { ...entry, status: 'cancelled' } : entry;
+    }),
+  })), [patch]);
+
+  const copyDaySchedule = useCallback((fromDay: number, toDay: number, weekStartDate: string) => patch((prev) => {
+    const source = prev.schedule.filter((entry) => entry.dayInt === fromDay && entry.weekStartDate === weekStartDate);
+    const conflicts = prev.schedule.some((entry) => entry.dayInt === toDay && entry.weekStartDate === weekStartDate);
+    if (conflicts || source.length === 0) return prev;
+    return { ...prev, schedule: [...prev.schedule, ...source.map((entry) => ({ ...entry, id: uid('e'), dayInt: toDay, status: 'unmarked' as const }))] };
+  }), [patch]);
 
   const addExtraClass = useCallback(
     (entry: Omit<ScheduleEntry, 'id' | 'isExtra'>) => {
@@ -180,7 +230,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const clearAllData = useCallback(() => commit({ ...EMPTY_DATA }, true), [commit]);
 
   const importFromJson = useCallback(
-    async (json: string) => commit(normalizeData(JSON.parse(json)), true),
+    async (json: string) => commit(await importData(json), true),
     [commit]
   );
 
@@ -203,6 +253,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addExtraClass,
       updateEntry,
       canUndo: undoCount > 0,
+      metricMode: data.metricMode ?? 'count',
+      setMetricMode,
+      exportCsv,
+      closeTerm,
+      reopenTerm,
+      bulkPause,
+      copyDaySchedule,
     }),
     [
       data,
@@ -218,10 +275,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addExtraClass,
       updateEntry,
       undoCount,
+      setMetricMode,
+      exportCsv,
+      closeTerm,
+      reopenTerm,
+      bulkPause,
+      copyDaySchedule,
     ]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+function refreshPhase3(data: AppData): AppData {
+  const today = todayStr();
+  return {
+    ...data,
+    phase3Cache: buildPhase3Cache(data, today),
+    weeklySnapshots: buildWeeklySnapshots(data),
+    insights: buildInsights(data),
+  };
 }
 
 export function useApp() {

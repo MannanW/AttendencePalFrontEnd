@@ -84,6 +84,16 @@ export default function DashboardScreen() {
           </View>
         )}
 
+        {derived.phase3Cache && (
+          <View style={styles.whatIfBox}>
+            <Text style={styles.sectionTitle}>What If Next Class?</Text>
+            <View style={styles.whatIfRow}>
+              <Text style={styles.whatIfLabel}>Attend</Text><Text style={styles.whatIfValue}>{derived.phase3Cache.whatIf.attendNext.toFixed(1)}%</Text>
+              <Text style={styles.whatIfLabel}>Miss</Text><Text style={[styles.whatIfValue, { color: COLORS.red }]}>{derived.phase3Cache.whatIf.missNext.toFixed(1)}%</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Search</Text>
           <TextInput
@@ -324,6 +334,10 @@ const styles = StyleSheet.create({
   recoveryTitle: { color: COLORS.amber, fontSize: 13, fontWeight: '700' },
   recoverySub: { color: COLORS.textSecondary, fontSize: 11, marginTop: 4 },
   insightText: { color: COLORS.textSecondary, fontSize: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  whatIfBox: { marginHorizontal: 20, marginBottom: 24, padding: 14, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  whatIfRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  whatIfLabel: { color: COLORS.textSecondary, fontSize: 11, textTransform: 'uppercase' },
+  whatIfValue: { color: COLORS.green, fontSize: 18, fontWeight: '700', fontFamily: 'monospace' },
   undoToast: {
     position: 'absolute',
     bottom: 80,
